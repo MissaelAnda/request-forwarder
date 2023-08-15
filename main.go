@@ -84,6 +84,10 @@ func Send(event WebhookEvent) {
 func main() {
 	app := fiber.New()
 
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendStatus(200)
+	})
+
 	app.All(":service", func(c *fiber.Ctx) error {
 		service := c.Params("service")
 		var payload []byte
@@ -101,6 +105,10 @@ func main() {
 		}
 
 		go Send(message)
+
+		if c.Query("hub.challenge") != "" { // whatsapp challenge
+			c.SendString(c.Query("hub.challenge"))
+		}
 
 		return c.SendStatus(200)
 	})
