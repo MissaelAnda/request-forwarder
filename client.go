@@ -23,34 +23,27 @@ var forwardTo = flag.String("forward", "http://localhost:8000", "The address to 
 var forwardToUrl *url.URL
 
 func SendRequest(payload []byte) {
+	log.Println("Received new event...")
+
 	event := WebhookEvent{}
 	if err := json.Unmarshal(payload, &event); err != nil {
 		log.Println("Malformed payload:", err)
 		return
 	}
 
-	for k := range forwardToUrl.Query() {
-		delete(forwardToUrl.Query(), k)
-	}
+	log.Printf("Forwarding %s request...\n", event.Method)
 
-	var body io.Reader
-	if event.Method == fiber.MethodGet {
-		body = nil
-
-		if event.Payload != nil {
-			data := make(map[string]string)
-			json.Unmarshal(event.Payload, &data)
-			for key, val := range data {
-				forwardToUrl.Query().Add(key, val)
-			}
-		}
-	} else {
+	var body io.Reader = nil
+	if event.Method == fiber.MethodPost && event.Payload != nil {
 		body = bytes.NewReader(event.Payload)
 	}
+
+	forwardToUrl.RawQuery = url.Values(event.Query).Encode()
 
 	req, err := http.NewRequest(event.Method, forwardToUrl.String(), body)
 	if err != nil {
 		log.Println("Error creating request:", err)
+		return
 	}
 
 	for header, value := range event.Headers {
@@ -59,6 +52,8 @@ func SendRequest(payload []byte) {
 
 	if _, err := http.DefaultClient.Do(req); err != nil {
 		log.Println("Error forwarding request:", err)
+	} else {
+		log.Printf("%s request forwarded successfully\n", event.Method)
 	}
 }
 
@@ -68,6 +63,8 @@ func main() {
 	var err error
 	if forwardToUrl, err = url.Parse(*forwardTo); err != nil {
 		log.Fatal("Incorrect forward url:", err)
+	} else {
+		log.Println("Requests will be forwarded to", forwardToUrl)
 	}
 
 	interrupt := make(chan os.Signal, 1)
@@ -83,7 +80,7 @@ func main() {
 
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		log.Fatal("dial:", err)
+		log.Fatal("Failed connection:", err)
 	} else {
 		log.Println("Successfully connected to", u.String())
 	}
@@ -99,7 +96,7 @@ func main() {
 				log.Println("read:", err)
 				return
 			}
-			log.Printf("received webhook event: %s", message)
+			log.Printf("received webhook event")
 			go SendRequest(message)
 		}
 	}()
@@ -113,9 +110,13 @@ func main() {
 
 			// Cleanly close the connection by sending a close message and then
 			// waiting (with timeout) for the server to close the connection.
-			err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			err := conn.WriteMessage(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Client interruption."),
+			)
+
 			if err != nil {
-				log.Println("write close:", err)
+				log.Println("Error closing connection:", err)
 				return
 			}
 			select {
