@@ -20,6 +20,7 @@ import (
 var addr = flag.String("address", "localhost:3000", "The server address")
 var service = flag.String("service", "test", "The service to subscribe to")
 var ssl = flag.Bool("ssl", false, "Wether the server has ssl enabled")
+var logResponses = flag.Bool("log", false, "Wether to log the responses from the server")
 var forwardTo = flag.String("forward", "http://localhost:8000", "The address to forward the request to")
 var forwardToUrl *url.URL
 
@@ -65,6 +66,10 @@ func SendRequest(payload []byte) {
 }
 
 func LogResponseToFile(response *http.Response, method string) {
+	if !*logResponses {
+		return
+	}
+
 	defer response.Body.Close()
 	if body, err := io.ReadAll(response.Body); err == nil {
 		fileName := method + "-" + *service + "-" + strings.ReplaceAll(time.Now().String(), " ", "_") + ".txt"
