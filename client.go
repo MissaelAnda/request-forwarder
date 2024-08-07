@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -31,16 +32,16 @@ func SendRequest(payload []byte) {
 		return
 	}
 
-	log.Printf("Forwarding %s request...\n", event.Method)
-
 	var body io.Reader = nil
 	if event.Method == fiber.MethodPost && event.Payload != nil {
 		body = bytes.NewReader(event.Payload)
 	}
 
 	forwardToUrl.RawQuery = url.Values(event.Query).Encode()
+	url := forwardToUrl.String()
+	log.Printf("Forwarding to %s\n", url)
 
-	req, err := http.NewRequest(event.Method, forwardToUrl.String(), body)
+	req, err := http.NewRequest(event.Method, url, body)
 	if err != nil {
 		log.Println("Error creating request:", err)
 		return
@@ -50,10 +51,30 @@ func SendRequest(payload []byte) {
 		req.Header.Set(header, value)
 	}
 
-	if _, err := http.DefaultClient.Do(req); err != nil {
+	if response, err := http.DefaultClient.Do(req); err != nil {
 		log.Println("Error forwarding request:", err)
 	} else {
-		log.Printf("%s request forwarded successfully\n", event.Method)
+		if response.StatusCode >= 400 {
+			log.Printf("Request forwarded with %d error response code\n", response.StatusCode)
+		} else {
+			log.Printf("%s request forwarded successfully\n", event.Method)
+		}
+
+		LogResponseToFile(response, event.Method)
+	}
+}
+
+func LogResponseToFile(response *http.Response, method string) {
+	defer response.Body.Close()
+	if body, err := io.ReadAll(response.Body); err == nil {
+		fileName := method + "-" + *service + "-" + strings.ReplaceAll(time.Now().String(), " ", "_") + ".txt"
+		if err := os.WriteFile(fileName, body, 0664); err != nil {
+			log.Println("Failed logging error response ", err)
+		} else {
+			log.Println("Error response saved to ", fileName)
+		}
+	} else {
+		log.Println("Malformed response body from request")
 	}
 }
 
