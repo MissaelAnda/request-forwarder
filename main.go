@@ -79,6 +79,7 @@ func runHub() {
 }
 
 func main() {
+	flag.Parse()
 	app := fiber.New()
 
 	app.Get("/", func(c *fiber.Ctx) error {
