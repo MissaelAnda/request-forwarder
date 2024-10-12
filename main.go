@@ -40,13 +40,13 @@ func runHub() {
 		case message := <-broadcast:
 			channel, ok := channels[*message.channel]
 			if !ok {
-				return
+				break
 			}
 			data, err := json.Marshal(message)
 
 			if err != nil {
 				log.Println("Error marshalling broadcast payload:", err)
-				return
+				break
 			}
 
 			// Send the message to all clients
