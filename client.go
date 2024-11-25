@@ -24,6 +24,11 @@ var logResponses = flag.Bool("log", false, "Wether to log the responses from the
 var forwardTo = flag.String("forward", "http://localhost:8000", "The address to forward the request to")
 var forwardToUrl *url.URL
 
+const (
+	pongWait   = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10
+)
+
 func SendRequest(payload []byte) {
 	log.Println("Received new event...")
 
@@ -110,20 +115,33 @@ func main() {
 	} else {
 		log.Println("Successfully connected to", u.String())
 	}
-	defer conn.Close()
 
 	done := make(chan struct{})
+	ticker := time.NewTicker(pingPeriod)
+
+	defer func() {
+		conn.Close()
+		ticker.Stop()
+	}()
 
 	go func() {
 		defer close(done)
 		for {
-			_, message, err := conn.ReadMessage()
+			ty, message, err := conn.ReadMessage()
+
 			if err != nil {
-				log.Println("read:", err)
+				log.Println("Read error:", err)
 				return
 			}
-			log.Printf("received webhook event")
-			go SendRequest(message)
+
+			switch ty {
+			case websocket.CloseMessage:
+				log.Println("Connection closed by server")
+				return
+			case websocket.TextMessage:
+				log.Println("Received webhook event")
+				go SendRequest(message)
+			}
 		}
 	}()
 
@@ -150,7 +168,12 @@ func main() {
 			case <-time.After(time.Second):
 			}
 			return
+		case <-ticker.C:
+			conn.SetWriteDeadline(time.Now().Add(pongWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Println("Error sending ping:", err)
+				return
+			}
 		}
 	}
-
 }
